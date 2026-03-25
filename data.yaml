@@ -1,0 +1,20 @@
+# E-Waste Detection Dataset Configuration
+# YOLO format dataset config
+
+path: .  # root directory (relative to where train.py is run)
+
+train: dataset/images/train
+val: dataset/images/val
+
+# Number of classes
+nc: 7
+
+# Class names
+names:
+  0: smartphone
+  1: laptop
+  2: battery
+  3: pcb
+  4: cables
+  5: monitor
+  6: ewaste_pile

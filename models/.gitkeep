@@ -1,0 +1,2 @@
+# Trained model weights are saved here after running src/train.py
+# Expected: best.pt, last.pt
