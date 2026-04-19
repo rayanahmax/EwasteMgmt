@@ -1,0 +1,26 @@
+# Environments
+.env
+.venv
+venv/
+env/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# YOLO / Ultralytics
+runs/
+*.pt
+*.cache
+
+# Streamlit
+.streamlit/
+
+# OS specific
+.DS_Store
+Thumbs.db

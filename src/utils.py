@@ -4,7 +4,7 @@ src/utils.py
 Shared utilities for the E-Waste Detection System.
 
 Contains:
-- CLASS_NAMES      : list of 7 e-waste category names
+- CLASS_NAMES      : list of 6 e-waste category names
 - CLASS_COLORS     : BGR color for each class (used by OpenCV)
 - load_model()     : loads a YOLO model from disk
 - draw_detections(): draws bounding boxes + labels on a frame
@@ -20,24 +20,22 @@ from pathlib import Path
 # ──────────────────────────────────────────────
 
 CLASS_NAMES: list[str] = [
-    "smartphone",   # 0
-    "laptop",       # 1
-    "battery",      # 2
-    "pcb",          # 3
-    "cables",       # 4
-    "monitor",      # 5
-    "ewaste_pile",  # 6
+    "PCB",          # 0
+    "adapter",      # 1
+    "cable",        # 2
+    "laptop",       # 3
+    "mouse",        # 4
+    "smartphone",   # 5
 ]
 
 # Distinct, high-contrast BGR colors per class
 CLASS_COLORS: dict[int, tuple[int, int, int]] = {
-    0: (  0, 200, 255),   # smartphone  – amber
-    1: ( 60, 255,  60),   # laptop      – lime
-    2: (  0,  80, 255),   # battery     – red-orange
-    3: (255, 100,  20),   # pcb         – blue
-    4: (180,   0, 255),   # cables      – purple
-    5: ( 20, 220, 220),   # monitor     – teal
-    6: (100, 100, 100),   # ewaste_pile – gray
+    0: (255, 100,  20),   # pcb         – blue
+    1: (  0, 165, 255),   # adapter     – orange
+    2: (180,   0, 255),   # cables      – purple
+    3: ( 60, 255,  60),   # laptop      – lime
+    4: ( 20, 220, 220),   # mouse       – teal
+    5: (  0, 200, 255),   # smartphone  – amber
 }
 
 
@@ -82,8 +80,8 @@ def draw_detections(
     image: np.ndarray,
     results,
     conf_threshold: float = 0.25,
-    line_thickness: int = 2,
-    font_scale: float = 0.55,
+    line_thickness: int = 3,      # Thicker box
+    font_scale: float = 0.8,       # Larger text
 ) -> np.ndarray:
     """
     Draw bounding boxes and class labels on *image* for all detections
@@ -108,6 +106,7 @@ def draw_detections(
         Annotated BGR image.
     """
     annotated = image.copy()
+    text_thickness = max(1, line_thickness - 1)
 
     if results.boxes is None or len(results.boxes) == 0:
         return annotated
@@ -128,17 +127,19 @@ def draw_detections(
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, line_thickness)
 
         # Build label string
-        label = f"{label_name}  {conf:.0%}"
+        label = f"{label_name.upper()} {conf:.0%}"
 
         # Label background
         (tw, th), baseline = cv2.getTextSize(
-            label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, line_thickness
+            label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_thickness
         )
-        label_y = max(y1 - 6, th + baseline)
+        label_y = max(y1, th + baseline + 5)
+        
+        # Fill background rectangle for text
         cv2.rectangle(
             annotated,
-            (x1, label_y - th - baseline),
-            (x1 + tw + 4, label_y + baseline),
+            (x1, label_y - th - baseline - 5),
+            (x1 + tw + 10, label_y + baseline),
             color,
             cv2.FILLED,
         )
@@ -148,11 +149,11 @@ def draw_detections(
         cv2.putText(
             annotated,
             label,
-            (x1 + 2, label_y),
+            (x1 + 5, label_y - 5),
             cv2.FONT_HERSHEY_SIMPLEX,
             font_scale,
             text_color,
-            line_thickness,
+            text_thickness,
             cv2.LINE_AA,
         )
 

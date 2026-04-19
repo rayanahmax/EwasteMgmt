@@ -10,6 +10,7 @@ Run with:
 import sys
 import io
 import time
+import pandas as pd
 from pathlib import Path
 
 import cv2
@@ -22,12 +23,22 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.utils import CLASS_NAMES, CLASS_COLORS, load_model, draw_detections
+from src.impact_analysis import get_ai_analysis, get_bulk_impact_summary
+
+# Cache AI results to stay under the strict 5 RPM rate limit
+@st.cache_data(show_spinner=False)
+def cached_ai_analysis(class_name):
+    return get_ai_analysis(class_name)
+
+@st.cache_data(show_spinner=False)
+def cached_bulk_summary(unique_names):
+    return get_bulk_impact_summary(unique_names)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page config
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="E-Waste Detector",
+    page_title="E-Waste Impact Analysis",
     page_icon="♻️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -50,23 +61,26 @@ st.markdown(
         background: linear-gradient(135deg, #0d1117 0%, #161b22 60%, #0d1117 100%);
     }
 
-    /* Header */
-    .hero-header {
+    /* Hero Styling */
+    .hero-container {
         text-align: center;
-        padding: 2rem 0 1rem 0;
+        padding: 3rem 1rem;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 20px;
+        margin-bottom: 2rem;
+        border: 1px solid rgba(255, 255, 255, 0.05);
     }
-    .hero-header h1 {
-        font-size: 2.6rem;
-        font-weight: 700;
+    .hero-container h1 {
+        font-size: 3rem;
+        font-weight: 800;
         background: linear-gradient(90deg, #00e5ff, #76ff03, #ffea00);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        margin: 0;
+        margin-bottom: 0.5rem;
     }
-    .hero-header p {
+    .hero-container p {
         color: #8b949e;
-        font-size: 1rem;
-        margin-top: 0.4rem;
+        font-size: 1.2rem;
     }
 
     /* Detection card */
@@ -74,351 +88,215 @@ st.markdown(
         background: rgba(33,38,45,0.85);
         border: 1px solid rgba(48,54,61,0.9);
         border-radius: 12px;
-        padding: 0.75rem 1rem;
-        margin-bottom: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .det-header {
         display: flex;
         align-items: center;
         gap: 0.75rem;
+        margin-bottom: 0.5rem;
     }
     .det-badge {
         border-radius: 6px;
-        padding: 2px 10px;
-        font-size: 0.78rem;
-        font-weight: 600;
+        padding: 4px 12px;
+        font-size: 0.85rem;
+        font-weight: 700;
         color: #000;
-        white-space: nowrap;
     }
     .det-label {
-        font-size: 0.92rem;
-        font-weight: 600;
-        color: #e6edf3;
-        flex: 1;
-    }
-    .det-conf {
-        font-size: 0.82rem;
-        color: #8b949e;
-    }
-
-    /* Stat box */
-    .stat-grid {
-        display: flex;
-        gap: 1rem;
-        margin: 1rem 0;
-    }
-    .stat-box {
-        flex: 1;
-        background: rgba(33,38,45,0.85);
-        border: 1px solid rgba(48,54,61,0.9);
-        border-radius: 12px;
-        padding: 1rem;
-        text-align: center;
-    }
-    .stat-value {
-        font-size: 2rem;
+        font-size: 1.1rem;
         font-weight: 700;
-        color: #00e5ff;
+        color: #e6edf3;
     }
-    .stat-label {
-        font-size: 0.78rem;
-        color: #8b949e;
-        margin-top: 0.2rem;
-    }
-
-    /* Info box */
-    .info-box {
-        background: rgba(0, 229, 255, 0.06);
-        border-left: 3px solid #00e5ff;
+    
+    /* Impact text */
+    .impact-desc {
+        background: rgba(0, 229, 255, 0.08);
+        border-left: 4px solid #00e5ff;
+        padding: 0.8rem 1.2rem;
         border-radius: 8px;
-        padding: 0.75rem 1rem;
-        font-size: 0.85rem;
-        color: #8b949e;
-        margin-top: 1rem;
+        font-size: 0.95rem;
+        color: #c9d1d9;
+        font-style: italic;
     }
 
-    /* Sidebar */
-    .css-1d391kg, [data-testid="stSidebar"] {
-        background: rgba(13,17,23,0.95) !important;
+    /* Benefits Boxes */
+    .benefit-container {
+        display: flex;
+        gap: 1.5rem;
+        margin: 2rem 0;
+    }
+    .benefit-box {
+        flex: 1;
+        padding: 1.5rem;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    .benefit-env { background: rgba(118, 255, 3, 0.05); border-left: 5px solid #76ff03; }
+    .benefit-eco { background: rgba(255, 234, 0, 0.05); border-left: 5px solid #ffea00; }
+    
+    .benefit-title {
+        font-weight: 700;
+        font-size: 1.2rem;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
     }
 
-    /* Buttons */
-    .stDownloadButton > button {
-        background: linear-gradient(90deg, #00e5ff22, #76ff0322) !important;
-        border: 1px solid #00e5ff66 !important;
-        color: #00e5ff !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-        transition: all 0.2s !important;
+    /* Global Info Cards */
+    .fact-card {
+        background: rgba(33,38,45,0.6);
+        border: 1px solid rgba(48,54,61,0.5);
+        border-radius: 10px;
+        padding: 1.5rem;
+        height: 100%;
     }
-    .stDownloadButton > button:hover {
-        background: linear-gradient(90deg, #00e5ff44, #76ff0344) !important;
-        border-color: #00e5ff !important;
-    }
+    .fact-icon { font-size: 2rem; margin-bottom: 1rem; }
+    .fact-text { font-size: 0.95rem; color: #8b949e; line-height: 1.6; }
 
-    hr { border-color: rgba(48,54,61,0.6); }
+    hr { border-color: rgba(48,54,61,0.4); }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-def bgr_to_hex(bgr: tuple) -> str:
-    b, g, r = bgr
-    return f"#{r:02x}{g:02x}{b:02x}"
-
-
-@st.cache_resource(show_spinner="Loading model…")
-def get_model(weights_path: str):
-    return load_model(weights_path)
-
-
-def pil_to_cv2(pil_img: Image.Image) -> np.ndarray:
-    return cv2.cvtColor(np.array(pil_img.convert("RGB")), cv2.COLOR_RGB2BGR)
-
-
-def cv2_to_pil(bgr: np.ndarray) -> Image.Image:
-    return Image.fromarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
-
-
-def image_to_bytes(pil_img: Image.Image) -> bytes:
-    buf = io.BytesIO()
-    pil_img.save(buf, format="PNG")
-    return buf.getvalue()
-
-
-def run_inference(model, bgr_img: np.ndarray, conf: float, iou: float):
-    return model(bgr_img, conf=conf, iou=iou, verbose=False)[0]
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Sidebar
+# Sidebar (Left Side)
 # ─────────────────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("## ⚙️ Settings")
+    st.image("https://cdn-icons-png.flaticon.com/512/3299/3299935.png", width=100)
+    st.markdown("## ⚙️ Control Center")
     st.markdown("---")
 
-    default_weights = str(ROOT / "models" / "best.pt")
-    weights_path = st.text_input(
-        "Model Weights Path",
-        value=default_weights,
-        help="Path to your trained .pt file. Defaults to yolov8n.pt if not found.",
-    )
-
-    conf_threshold = st.slider(
-        "Confidence Threshold",
-        min_value=0.05,
-        max_value=0.95,
-        value=0.25,
-        step=0.05,
-        help="Detections below this score will be ignored.",
-    )
-
-    iou_threshold = st.slider(
-        "IoU Threshold (NMS)",
-        min_value=0.10,
-        max_value=0.90,
-        value=0.45,
-        step=0.05,
-        help="Controls overlap allowed between boxes during Non-Maximum Suppression.",
-    )
+    conf_threshold = st.slider("Confidence", 0.05, 0.95, 0.25, 0.05)
+    iou_threshold = st.slider("IOU", 0.10, 0.90, 0.45, 0.05)
 
     st.markdown("---")
-    st.markdown("### 🏷️ Class Legend")
-    for idx, name in enumerate(CLASS_NAMES):
-        color_hex = bgr_to_hex(CLASS_COLORS[idx])
-        st.markdown(
-            f'<span style="display:inline-block;width:12px;height:12px;'
-            f'background:{color_hex};border-radius:3px;margin-right:6px;"></span>'
-            f'**{name}**',
-            unsafe_allow_html=True,
-        )
+    st.markdown("### 📋 Classes")
+    for name in CLASS_NAMES:
+        st.sidebar.markdown(f"- **{name.title()}**")
 
     st.markdown("---")
-    st.markdown(
-        '<div style="font-size:0.75rem;color:#484f58;">'
-        "E-Waste Detection System v1.0<br>"
-        "Powered by YOLOv8 · Streamlit"
-        "</div>",
-        unsafe_allow_html=True,
-    )
-
+    st.markdown("### 🤖 Analysis Mode")
+    use_ai = st.toggle("Enable AI Analysis", value=True)
+    
+    default_weights = str(ROOT / "runs" / "detect" / "models" / "train2" / "weights" / "best.pt")
+    weights_path = st.text_input("Model Path", value=default_weights)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Hero header
+# Main Application Layout
 # ─────────────────────────────────────────────────────────────────────────────
+
+# TOP center title
 st.markdown(
     """
-    <div class="hero-header">
-        <h1>♻️ E-Waste Detection System</h1>
-        <p>Upload an image to identify and classify electronic waste using YOLOv8</p>
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <h1 style="font-size: 3.5rem; font-weight: 800; background: linear-gradient(90deg, #00e5ff, #76ff03, #ffea00); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+            E-Waste Detection & Impact Analysis
+        </h1>
     </div>
     """,
     unsafe_allow_html=True,
 )
-st.markdown("---")
 
+# Below title: Detection and analysis
+st.markdown("### Detection and analysis")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Upload
-# ─────────────────────────────────────────────────────────────────────────────
+# Then upload image
 uploaded_file = st.file_uploader(
-    "📂 Drop an image here or click to browse",
-    type=["jpg", "jpeg", "png", "bmp", "webp"],
-    help="Supported formats: JPG, PNG, BMP, WebP",
+    "📂 Upload e-waste image",
+    type=["jpg", "jpeg", "png", "webp"],
+    label_visibility="collapsed"
 )
 
-if uploaded_file is None:
-    st.markdown(
-        """
-        <div class="info-box">
-            💡 <strong>How to use:</strong><br>
-            1. Upload an image containing e-waste items.<br>
-            2. Adjust confidence / IoU thresholds in the sidebar if needed.<br>
-            3. Detections will appear instantly below the image.<br><br>
-            <em>No model trained yet? The system falls back to YOLOv8n pretrained weights 
-            for a quick demo — results will be for general objects, not e-waste classes, 
-            until you train on your dataset.</em>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.stop()
+if uploaded_file:
+    pil_image = Image.open(uploaded_file)
+    bgr_image = cv2.cvtColor(np.array(pil_image.convert("RGB")), cv2.COLOR_RGB2BGR)
+    
+    model = load_model(weights_path)
+    
+    with st.spinner("Analyzing image..."):
+        results = model(bgr_image, conf=conf_threshold, iou=iou_threshold, verbose=False)[0]
+        
+        annotated_bgr = draw_detections(bgr_image, results, conf_threshold=conf_threshold)
+        annotated_pil = Image.fromarray(cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB))
+        
+        detections = []
+        if results.boxes is not None:
+            for box in results.boxes:
+                cls_id = int(box.cls[0])
+                conf = float(box.conf[0])
+                if conf >= conf_threshold:
+                    detections.append({
+                        "name": CLASS_NAMES[cls_id],
+                        "conf": conf,
+                        "id": cls_id
+                    })
 
+    # Show scanned image
+    st.image(annotated_pil, width='stretch')
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Inference
-# ─────────────────────────────────────────────────────────────────────────────
-pil_image = Image.open(uploaded_file)
-bgr_image = pil_to_cv2(pil_image)
+    # Summary Section
+    st.markdown("---")
+    st.markdown("### summary:")
+    
+    if detections:
+        num_objects = len(detections)
+        avg_conf = sum(d['conf'] for d in detections) / num_objects
+        unique_classes = sorted(list({d['name'] for d in detections}))
+        num_species = len(unique_classes)
+        
+        # Specific formatting
+        st.markdown(f"**Objects-{num_objects}**")
+        st.markdown(f"**class:{', '.join(unique_classes)}**")
+        st.markdown(f"**Accuracy-{avg_conf:.0%}**")
+        st.markdown(f"**Species-{num_species}**")
+        
+        st.markdown("---")
+        # Graph (below this)
+        st.markdown("#### Material Composition Graph")
+        
+        # Aggregate analysis for the graph (using first detection as primary or bulk)
+        # For simplicity and clarity, we'll show composition for each detected item in an expander 
+        # but the request asks for "the graph" below the summary.
+        # I'll provide an aggregated bar chart if multiple items exist, or 
+        # just the primary detections' composition.
+        
+        all_comp = {}
+        for d in detections:
+            info = cached_ai_analysis(d['name'])
+            for mat, perc in info['composition'].items():
+                all_comp[mat] = all_comp.get(mat, 0) + perc
+        
+        # Normalize aggregated composition
+        total = sum(all_comp.values())
+        if total > 0:
+            for mat in all_comp:
+                all_comp[mat] = (all_comp[mat] / total) * 100
 
-model = get_model(weights_path)
-
-with st.spinner("Running detection…"):
-    t0 = time.perf_counter()
-    results = run_inference(model, bgr_image, conf_threshold, iou_threshold)
-    elapsed_ms = (time.perf_counter() - t0) * 1000
-
-annotated_bgr = draw_detections(bgr_image, results, conf_threshold=conf_threshold)
-annotated_pil = cv2_to_pil(annotated_bgr)
-
-# Gather detections
-detections = []
-if results.boxes is not None:
-    for box in results.boxes:
-        cls_id = int(box.cls[0])
-        conf   = float(box.conf[0])
-        if conf >= conf_threshold:
-            bbox   = [int(v) for v in box.xyxy[0].tolist()]
-            detections.append({
-                "class_id":   cls_id,
-                "class_name": CLASS_NAMES[cls_id] if cls_id < len(CLASS_NAMES) else str(cls_id),
-                "confidence": conf,
-                "bbox":       bbox,
-            })
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Stats bar
-# ─────────────────────────────────────────────────────────────────────────────
-avg_conf = (
-    sum(d["confidence"] for d in detections) / len(detections)
-    if detections else 0.0
-)
-unique_classes = len({d["class_id"] for d in detections})
-
-col_a, col_b, col_c, col_d = st.columns(4)
-with col_a:
-    st.metric("🔍 Total Detections", len(detections))
-with col_b:
-    st.metric("🏷️ Unique Classes", unique_classes)
-with col_c:
-    st.metric("🎯 Avg Confidence", f"{avg_conf:.0%}")
-with col_d:
-    st.metric("⚡ Inference Time", f"{elapsed_ms:.0f} ms")
-
-st.markdown("---")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Image columns
-# ─────────────────────────────────────────────────────────────────────────────
-col_orig, col_det = st.columns(2)
-
-with col_orig:
-    st.markdown("**📷 Original Image**")
-    st.image(pil_image, use_container_width=True)
-
-with col_det:
-    st.markdown("**🎯 Detection Results**")
-    st.image(annotated_pil, use_container_width=True)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Download button
-# ─────────────────────────────────────────────────────────────────────────────
-st.download_button(
-    label="⬇️  Download Annotated Image",
-    data=image_to_bytes(annotated_pil),
-    file_name=f"ewaste_detected_{uploaded_file.name.rsplit('.', 1)[0]}.png",
-    mime="image/png",
-)
-
-st.markdown("---")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Detection Details
-# ─────────────────────────────────────────────────────────────────────────────
-st.markdown("### 📋 Detection Details")
-
-if not detections:
-    st.warning(
-        "No objects detected above the confidence threshold. "
-        "Try lowering the threshold in the sidebar."
-    )
+        comp_df = pd.DataFrame(
+            list(all_comp.items()), 
+            columns=['Material', 'Composition (%)']
+        ).set_index('Material')
+        
+        st.bar_chart(comp_df, x_label="Material", y_label="%", color="#00e5ff", height=300)
+        
+        # AI Insight if enabled
+        if use_ai:
+            unique_names = sorted(list({d['name'] for d in detections}))
+            with st.spinner("Generating AI Impact Analysis..."):
+                ai_summary = cached_bulk_summary(unique_names)
+            
+            st.markdown("---")
+            st.markdown("### Environmental & Economic Impact")
+            st.info(ai_summary)
+    else:
+        st.warning("No objects detected above the confidence threshold.")
 else:
-    # Visual cards
-    for d in sorted(detections, key=lambda x: x["confidence"], reverse=True):
-        color_hex = bgr_to_hex(CLASS_COLORS.get(d["class_id"], (180, 180, 180)))
-        x1, y1, x2, y2 = d["bbox"]
-        st.markdown(
-            f"""
-            <div class="det-card">
-                <div class="det-badge" style="background:{color_hex};">
-                    {'ID ' + str(d['class_id'])}
-                </div>
-                <div class="det-label">{d['class_name'].replace('_', ' ').title()}</div>
-                <div class="det-conf">
-                    Conf: <strong>{d['confidence']:.0%}</strong> &nbsp;|&nbsp;
-                    Box: ({x1}, {y1}) → ({x2}, {y2})
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    st.info("💡 **Ready to scan.** Upload an image above to begin detection and analysis.")
 
-    # Data table (expandable)
-    with st.expander("📊 Show as Table", expanded=False):
-        import pandas as pd
-
-        df = pd.DataFrame(
-            [
-                {
-                    "Class ID":   d["class_id"],
-                    "Class Name": d["class_name"],
-                    "Confidence": f"{d['confidence']:.4f}",
-                    "x1": d["bbox"][0],
-                    "y1": d["bbox"][1],
-                    "x2": d["bbox"][2],
-                    "y2": d["bbox"][3],
-                    "Width":  d["bbox"][2] - d["bbox"][0],
-                    "Height": d["bbox"][3] - d["bbox"][1],
-                }
-                for d in sorted(detections, key=lambda x: x["confidence"], reverse=True)
-            ]
-        )
-        st.dataframe(df, use_container_width=True, hide_index=True)
+# Add footer spacing
+st.markdown("<br><br>", unsafe_allow_html=True)

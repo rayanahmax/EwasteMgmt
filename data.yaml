@@ -7,14 +7,13 @@ train: dataset/images/train
 val: dataset/images/val
 
 # Number of classes
-nc: 7
+nc: 6
 
 # Class names
 names:
-  0: smartphone
-  1: laptop
-  2: battery
-  3: pcb
-  4: cables
-  5: monitor
-  6: ewaste_pile
+  0: PCB
+  1: adapter
+  2: cable
+  3: laptop
+  4: mouse
+  5: smartphone

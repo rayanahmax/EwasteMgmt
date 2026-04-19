@@ -24,3 +24,7 @@ streamlit>=1.28.0
 # Notebook support
 ipykernel>=6.0.0
 ipywidgets>=8.0.0
+
+# AI Integration
+google-generativeai>=0.3.0
+python-dotenv>=1.0.0
